@@ -1,16 +1,15 @@
 {
-  "private": true,
-  "displayName": "Plugin Name",
-  "name": "homebridge-plugin-name",
-  "version": "1.0.0",
-  "description": "A short description about what your plugin does.",
+  "displayName": "G4S Alarm",
+  "name": "homebridge-g4s-alarm",
+  "version": "0.0.0",
+  "description": "Use G4S alarm in Homekit",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git://github.com/USERNAME/GITHUB_PROJECT_NAME.git"
+    "url": "git://github.com/hyber1z0r/homebridge-g4s-alarm.git"
   },
   "bugs": {
-    "url": "https://github.com/USERNAME/GITHUB_PROJECT_NAME/issues"
+    "url": "https://github.com/hyber1z0r/homebridge-g4s-alarm/issues"
   },
   "engines": {
     "node": ">=10.17.0",
@@ -26,7 +25,9 @@
   "keywords": [
     "homebridge-plugin"
   ],
-  "dependencies": {},
+  "dependencies": {
+    "g4s": "^0.2.1"
+  },
   "devDependencies": {
     "@types/node": "^14.0.14",
     "@typescript-eslint/eslint-plugin": "^3.4.0",
@@ -36,6 +37,7 @@
     "nodemon": "^2.0.4",
     "rimraf": "^3.0.2",
     "ts-node": "^8.10.2",
-    "typescript": "^3.9.5"
+    "typescript": "^3.9.5",
+    "np": "^6.3.2"
   }
 }
