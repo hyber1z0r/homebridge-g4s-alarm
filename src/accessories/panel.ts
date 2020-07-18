@@ -116,8 +116,10 @@ export class PanelAccessory {
           break;
         default:
           this.platform.log.info('unsupported value in set target state');
-          callback(new Error(`Unsupported value ${value}`));
+          throw new Error(`Unsupported value ${value}`);
       }
+
+      callback(null, value);
     } catch (e) {
       this.platform.log.info('Failed to arm/disarm');
       this.platform.log.info(e.message);
