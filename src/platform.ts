@@ -11,28 +11,31 @@ import {
 
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { PanelAccessory } from './accessories/panel';
+import G4S from 'g4s';
 
 export class G4SPlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service = this.api.hap.Service;
   public readonly Characteristic: typeof Characteristic = this.api.hap.Characteristic;
 
   public readonly accessories: PlatformAccessory[] = [];
+  public readonly G4S: G4S;
 
   constructor(
     public readonly log: Logger,
     public readonly config: PlatformConfig,
     public readonly api: API,
   ) {
+    this.G4S = new G4S(this.config.username, this.config.password);
     this.log.debug('Finished initializing platform:', this.config.name);
 
     // When this event is fired it means Homebridge has restored all cached accessories from disk.
     // Dynamic Platform plugins should only register new accessories after this event was fired,
     // in order to ensure they weren't added to homebridge already. This event can also be used
     // to start discovery of new accessories.
-    this.api.on(APIEvent.DID_FINISH_LAUNCHING, () => {
+    this.api.on(APIEvent.DID_FINISH_LAUNCHING, async () => {
       log.debug('Executed didFinishLaunching callback');
       // run the method to discover / register your devices as accessories
-      this.discoverDevices();
+      await this.discoverDevices();
     });
   }
 
@@ -52,60 +55,49 @@ export class G4SPlatform implements DynamicPlatformPlugin {
    * Accessories must only be registered once, previously created accessories
    * must not be registered again to prevent "duplicate UUID" errors.
    */
-  discoverDevices() {
+  async discoverDevices() {
 
-    // EXAMPLE ONLY
-    // A real plugin you would discover accessories from the local network, cloud services
-    // or a user-defined array in the platform config.
-    const exampleDevices = [
-      {
-        exampleUniqueId: 'ABCD',
-        exampleDisplayName: 'Bedroom',
-      },
-    ];
+    const panelId = await this.G4S.getPanelId();
 
-    // loop over the discovered devices and register each one if it has not already been registered
-    for (const device of exampleDevices) {
+    // generate a unique id for the accessory this should be generated from
+    // something globally unique, but constant, for example, the device serial
+    // number or MAC address
+    const uuid = this.api.hap.uuid.generate(panelId.toString());
 
-      // generate a unique id for the accessory this should be generated from
-      // something globally unique, but constant, for example, the device serial
-      // number or MAC address
-      const uuid = this.api.hap.uuid.generate(device.exampleUniqueId);
+    // see if an accessory with the same uuid has already been registered and restored from
+    // the cached devices we stored in the `configureAccessory` method above
+    const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
 
-      // see if an accessory with the same uuid has already been registered and restored from
-      // the cached devices we stored in the `configureAccessory` method above
-      const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
+    if (existingAccessory) {
+      // the accessory already exists
+      this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
 
-      if (existingAccessory) {
-        // the accessory already exists
-        this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
+      // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. eg.:
+      // existingAccessory.context.device = device;
+      // this.api.updatePlatformAccessories([existingAccessory]);
 
-        // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. eg.:
-        // existingAccessory.context.device = device;
-        // this.api.updatePlatformAccessories([existingAccessory]);
+      // create the accessory handler for the restored accessory
+      // this is imported from `platformAccessory.ts`
+      new PanelAccessory(this, existingAccessory);
 
-        // create the accessory handler for the restored accessory
-        // this is imported from `platformAccessory.ts`
-        new PanelAccessory(this, existingAccessory);
+    } else {
+      const displayName = `Panel: ${panelId}`;
+      // the accessory does not yet exist, so we need to create it
+      this.log.info('Adding new accessory:', displayName);
 
-      } else {
-        // the accessory does not yet exist, so we need to create it
-        this.log.info('Adding new accessory:', device.exampleDisplayName);
+      // create a new accessory
+      const accessory = new this.api.platformAccessory(displayName, uuid, Categories.SECURITY_SYSTEM);
 
-        // create a new accessory
-        const accessory = new this.api.platformAccessory(device.exampleDisplayName, uuid, Categories.SECURITY_SYSTEM);
+      // store a copy of the device object in the `accessory.context`
+      // the `context` property can be used to store any data about the accessory you may need
+      accessory.context.panelId = panelId;
 
-        // store a copy of the device object in the `accessory.context`
-        // the `context` property can be used to store any data about the accessory you may need
-        accessory.context.device = device;
+      // create the accessory handler for the newly create accessory
+      // this is imported from `platformAccessory.ts`
+      new PanelAccessory(this, accessory);
 
-        // create the accessory handler for the newly create accessory
-        // this is imported from `platformAccessory.ts`
-        new PanelAccessory(this, accessory);
-
-        // link the accessory to your platform
-        this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
-      }
+      // link the accessory to your platform
+      this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
     }
   }
 }
