@@ -44,9 +44,13 @@ export class PanelAccessory {
     this.service.setCharacteristic(this.platform.Characteristic.Name, this.platform.config.name ?? 'Alarmpanel');
 
     // register handlers for the TargetState Characteristic
+    // TODO test validValues to see if we can get rid of "Stay arm and away arm"
     this.service.getCharacteristic(this.platform.Characteristic.SecuritySystemTargetState)
       .on('get', this.handleGetTargetState.bind(this))
-      .on('set', this.handleSetTargetState.bind(this));
+      .on('set', this.handleSetTargetState.bind(this))
+      .setProps({
+        validValues: [2, 3],
+      });
 
     this.service.getCharacteristic(this.platform.Characteristic.SecuritySystemCurrentState)
       .on('get', this.handleGetCurrentState.bind(this));
@@ -54,8 +58,11 @@ export class PanelAccessory {
   }
 
   async handleGetCurrentState(callback: CharacteristicGetCallback) {
+    this.platform.log.info('GET: CurrentState');
     try {
       const armType = await this.G4S.getArmType();
+      this.platform.log.info('CurrentState:', armType);
+
       switch (armType) {
         case ArmType.FULL_ARM:
           callback(null, 1);
@@ -77,31 +84,41 @@ export class PanelAccessory {
   }
 
   handleGetTargetState(callback: CharacteristicGetCallback) {
-    const value = this.state.targetArmType;
-
-    callback(null, value);
+    this.platform.log.info('GET: TargetState');
+    this.platform.log.info('TargetState:', this.state.targetArmType);
+    callback(null, this.state.targetArmType);
   }
 
   async handleSetTargetState(value: CharacteristicValue, callback: CharacteristicSetCallback) {
+    this.platform.log.info('SET: TargetState');
     this.state.targetArmType = value;
+    this.platform.log.info('TargetState:', value);
 
     try {
       const panelId = this.accessory.context.panelId;
       switch (value) {
         case 1:
+          this.platform.log.info('ARMING...');
           await this.G4S.armPanel(panelId);
+          callback(null);
+          this.platform.log.info('ARMED!');
           break;
         case 2:
+          this.platform.log.info('NIGHT ARMING...');
           await this.G4S.nightArmPanel(panelId);
+          callback(null);
+          this.platform.log.info('ARMED!');
           break;
         case 3:
+          this.platform.log.info('DISARMING...');
           await this.G4S.disarmPanel(panelId);
+          callback(null);
+          this.platform.log.info('DISARMED!');
           break;
         default:
           throw new Error(`Unsupported value ${value}`);
       }
 
-      callback(null);
     } catch (e) {
       this.platform.log.info('Failed to arm/disarm');
       this.platform.log.info(e.message);
