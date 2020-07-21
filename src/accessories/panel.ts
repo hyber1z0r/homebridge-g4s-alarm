@@ -100,19 +100,19 @@ export class PanelAccessory {
         case 1:
           this.platform.log.info('ARMING...');
           await this.G4S.armPanel(panelId);
-          callback(null);
+          callback();
           this.platform.log.info('ARMED!');
           break;
         case 2:
           this.platform.log.info('NIGHT ARMING...');
           await this.G4S.nightArmPanel(panelId);
-          callback(null);
+          callback();
           this.platform.log.info('ARMED!');
           break;
         case 3:
           this.platform.log.info('DISARMING...');
           await this.G4S.disarmPanel(panelId);
-          callback(null);
+          callback();
           this.platform.log.info('DISARMED!');
           break;
         default:
