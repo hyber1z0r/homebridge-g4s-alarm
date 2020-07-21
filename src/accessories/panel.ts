@@ -17,6 +17,7 @@ type State = {
 export class PanelAccessory {
   private service: Service;
   private G4S: G4S;
+  private readonly POLL_INTERVAL = 5000;
 
   private state: State = {
     targetArmType: 3,
@@ -53,6 +54,8 @@ export class PanelAccessory {
 
     this.service.getCharacteristic(this.platform.Characteristic.SecuritySystemCurrentState)
       .on('get', this.handleGetCurrentState.bind(this));
+
+    setInterval(this.pollCurrentState.bind(this), this.POLL_INTERVAL);
   }
 
   async handleGetCurrentState(callback: CharacteristicGetCallback) {
@@ -81,6 +84,17 @@ export class PanelAccessory {
     }
   }
 
+  async pollCurrentState() {
+    this.platform.log.info('POLL: CurrentState');
+
+    const armType = await this.G4S.getArmType();
+    this.platform.log.info('POLL - CurrentState:', armType);
+
+    const value = armType === ArmType.NIGHT_ARM ? 2 : 3;
+    this.service.updateCharacteristic(this.platform.Characteristic.SecuritySystemCurrentState, value);
+    this.platform.log.info('POLL: Updated Characteristic');
+  }
+
   handleGetTargetState(callback: CharacteristicGetCallback) {
     this.platform.log.info('GET: TargetState');
     this.platform.log.info('TargetState:', this.state.targetArmType);
@@ -98,23 +112,25 @@ export class PanelAccessory {
         case 1:
           this.platform.log.info('ARMING...');
           await this.G4S.armPanel(panelId);
+          callback();
           this.platform.log.info('ARMED!');
           break;
         case 2:
           this.platform.log.info('NIGHT ARMING...');
           await this.G4S.nightArmPanel(panelId);
+          callback();
           this.platform.log.info('ARMED!');
           break;
         case 3:
           this.platform.log.info('DISARMING...');
           await this.G4S.disarmPanel(panelId);
+          callback();
           this.platform.log.info('DISARMED!');
           break;
         default:
           throw new Error(`Unsupported value ${value}`);
       }
-      this.service.updateCharacteristic(this.platform.Characteristic.SecuritySystemCurrentState, value);
-      callback();
+
     } catch (e) {
       this.platform.log.info('Failed to arm/disarm');
       this.platform.log.info(e.message);
