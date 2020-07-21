@@ -1,9 +1,9 @@
 import {
-  Service,
-  PlatformAccessory,
-  CharacteristicValue,
-  CharacteristicSetCallback,
   CharacteristicGetCallback,
+  CharacteristicSetCallback,
+  CharacteristicValue,
+  PlatformAccessory,
+  Service,
 } from 'homebridge';
 
 import { G4SPlatform } from '../platform';
@@ -17,6 +17,7 @@ type State = {
 export class PanelAccessory {
   private service: Service;
   private G4S: G4S;
+  private readonly POLL_INTERVAL = 5000;
 
   private state: State = {
     targetArmType: 3,
@@ -44,7 +45,6 @@ export class PanelAccessory {
     this.service.setCharacteristic(this.platform.Characteristic.Name, this.platform.config.name ?? 'Alarmpanel');
 
     // register handlers for the TargetState Characteristic
-    // TODO test validValues to see if we can get rid of "Stay arm and away arm"
     this.service.getCharacteristic(this.platform.Characteristic.SecuritySystemTargetState)
       .on('get', this.handleGetTargetState.bind(this))
       .on('set', this.handleSetTargetState.bind(this))
@@ -55,6 +55,7 @@ export class PanelAccessory {
     this.service.getCharacteristic(this.platform.Characteristic.SecuritySystemCurrentState)
       .on('get', this.handleGetCurrentState.bind(this));
 
+    setInterval(this.pollCurrentState.bind(this), this.POLL_INTERVAL);
   }
 
   async handleGetCurrentState(callback: CharacteristicGetCallback) {
@@ -81,6 +82,17 @@ export class PanelAccessory {
       this.platform.log.error(e.message);
       callback(e);
     }
+  }
+
+  async pollCurrentState() {
+    this.platform.log.info('POLL: CurrentState');
+
+    const armType = await this.G4S.getArmType();
+    this.platform.log.info('POLL - CurrentState:', armType);
+
+    const value = armType === ArmType.NIGHT_ARM ? 2 : 3;
+    this.service.updateCharacteristic(this.platform.Characteristic.SecuritySystemCurrentState, value);
+    this.platform.log.info('POLL: Updated Characteristic');
   }
 
   handleGetTargetState(callback: CharacteristicGetCallback) {
