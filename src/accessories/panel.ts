@@ -41,7 +41,7 @@ export class PanelAccessory {
 
     // set the service name, this is what is displayed as the default name on the Home app
     // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
-    this.service.setCharacteristic(this.platform.Characteristic.Name, 'Alarmpanel');
+    this.service.setCharacteristic(this.platform.Characteristic.Name, this.platform.config.name ?? 'Alarmpanel');
 
     // register handlers for the TargetState Characteristic
     this.service.getCharacteristic(this.platform.Characteristic.SecuritySystemTargetState)
@@ -49,23 +49,13 @@ export class PanelAccessory {
       .on('set', this.handleSetTargetState.bind(this));
 
     this.service.getCharacteristic(this.platform.Characteristic.SecuritySystemCurrentState)
-      .on('get', this.handleGetCurrentState.bind(this))
-      .on('set', this.handleSetCurrentState.bind(this));
+      .on('get', this.handleGetCurrentState.bind(this));
 
-  }
-
-  handleSetCurrentState(value: CharacteristicValue, callback: CharacteristicSetCallback) {
-    this.platform.log.info('Trying to set current state', value);
-    callback(null);
   }
 
   async handleGetCurrentState(callback: CharacteristicGetCallback) {
-    this.platform.log.info('Calling get current state');
-
     try {
       const armType = await this.G4S.getArmType();
-      this.platform.log.info(`Got current state from API: ${armType}`);
-      this.platform.log.info('Invoking callback...');
       switch (armType) {
         case ArmType.FULL_ARM:
           callback(null, 1);
@@ -86,40 +76,32 @@ export class PanelAccessory {
     }
   }
 
-  handleGetTargetState(callback: CharacteristicSetCallback) {
+  handleGetTargetState(callback: CharacteristicGetCallback) {
     const value = this.state.targetArmType;
-
-    this.platform.log.info('get target state:', value);
 
     callback(null, value);
   }
 
   async handleSetTargetState(value: CharacteristicValue, callback: CharacteristicSetCallback) {
     this.state.targetArmType = value;
-    this.platform.log.info('set target state:', value);
 
     try {
       const panelId = this.accessory.context.panelId;
-      this.platform.log.info('panelId', panelId);
       switch (value) {
         case 1:
-          this.platform.log.info('arm panel');
           await this.G4S.armPanel(panelId);
           break;
         case 2:
-          this.platform.log.info('nightarm panel');
           await this.G4S.nightArmPanel(panelId);
           break;
         case 3:
-          this.platform.log.info('disarm panel');
           await this.G4S.disarmPanel(panelId);
           break;
         default:
-          this.platform.log.info('unsupported value in set target state');
           throw new Error(`Unsupported value ${value}`);
       }
 
-      callback(null, value);
+      callback(null);
     } catch (e) {
       this.platform.log.info('Failed to arm/disarm');
       this.platform.log.info(e.message);
