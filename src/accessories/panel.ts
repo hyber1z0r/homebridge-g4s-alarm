@@ -113,8 +113,8 @@ export class PanelAccessory {
         default:
           throw new Error(`Unsupported value ${value}`);
       }
-
       this.service.updateCharacteristic(this.platform.Characteristic.SecuritySystemCurrentState, value);
+      callback();
     } catch (e) {
       this.platform.log.info('Failed to arm/disarm');
       this.platform.log.info(e.message);
