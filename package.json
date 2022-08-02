@@ -26,7 +26,7 @@
     "homebridge-plugin"
   ],
   "dependencies": {
-    "g4s": "^0.3.1"
+    "g4s": "0.3.2"
   },
   "devDependencies": {
     "@types/node": "^14.0.14",
