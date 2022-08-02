@@ -11,8 +11,8 @@ import G4S from 'g4s';
 import { ArmType } from 'g4s/dist/types/ArmType';
 
 type State = {
-  targetArmType: CharacteristicValue
-}
+  targetArmType: CharacteristicValue;
+};
 
 export class PanelAccessory {
   private service: Service;
@@ -29,11 +29,13 @@ export class PanelAccessory {
   ) {
     this.G4S = platform.G4S;
 
-    this.accessory.getService(this.platform.Service.AccessoryInformation)!
+    this.accessory
+      .getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Manufacturer, 'G4S')
       .setCharacteristic(this.platform.Characteristic.Model, 'SMART Alarm');
 
-    this.service = this.accessory.getService(this.platform.Service.SecuritySystem) ??
+    this.service =
+      this.accessory.getService(this.platform.Service.SecuritySystem) ??
       this.accessory.addService(this.platform.Service.SecuritySystem);
 
     // To avoid "Cannot add a Service with the same UUID another Service without also defining a unique 'subtype' property." error,
@@ -42,17 +44,28 @@ export class PanelAccessory {
 
     // set the service name, this is what is displayed as the default name on the Home app
     // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
-    this.service.setCharacteristic(this.platform.Characteristic.Name, this.platform.config.name ?? 'Alarmpanel');
+    this.service.setCharacteristic(
+      this.platform.Characteristic.Name,
+      this.platform.config.name ?? 'Alarmpanel',
+    );
 
     // register handlers for the TargetState Characteristic
-    this.service.getCharacteristic(this.platform.Characteristic.SecuritySystemTargetState)
+    this.service
+      .getCharacteristic(this.platform.Characteristic.SecuritySystemTargetState)
       .on('get', this.handleGetTargetState.bind(this))
       .on('set', this.handleSetTargetState.bind(this))
       .setProps({
-        validValues: [2, 3],
+        validValues: [
+          this.platform.Characteristic.SecuritySystemTargetState.AWAY_ARM,
+          this.platform.Characteristic.SecuritySystemTargetState.NIGHT_ARM,
+          this.platform.Characteristic.SecuritySystemTargetState.DISARM,
+        ],
       });
 
-    this.service.getCharacteristic(this.platform.Characteristic.SecuritySystemCurrentState)
+    this.service
+      .getCharacteristic(
+        this.platform.Characteristic.SecuritySystemCurrentState,
+      )
       .on('get', this.handleGetCurrentState.bind(this));
 
     setInterval(this.pollCurrentState.bind(this), this.POLL_INTERVAL);
@@ -66,21 +79,35 @@ export class PanelAccessory {
 
       switch (armType) {
         case ArmType.FULL_ARM:
-          callback(null, 1);
+          callback(
+            null,
+            this.platform.Characteristic.SecuritySystemTargetState.AWAY_ARM,
+          );
           break;
         case ArmType.NIGHT_ARM:
-          callback(null, 2);
+          callback(
+            null,
+            this.platform.Characteristic.SecuritySystemTargetState.NIGHT_ARM,
+          );
           break;
         case ArmType.DISARMED:
-          callback(null, 3);
+          callback(
+            null,
+            this.platform.Characteristic.SecuritySystemTargetState.DISARM,
+          );
           break;
         default:
-          callback(null, 3);
+          callback(
+            null,
+            this.platform.Characteristic.SecuritySystemTargetState.DISARM,
+          );
       }
     } catch (e) {
-      this.platform.log.error('Caught an error while trying to get currentstate');
-      this.platform.log.error(e.message);
-      callback(e);
+      this.platform.log.error(
+        'Caught an error while trying to get currentstate',
+      );
+      this.platform.log.error((e as Error).message);
+      callback(e as Error);
     }
   }
 
@@ -90,8 +117,12 @@ export class PanelAccessory {
     const armType = await this.G4S.getArmType();
     this.platform.log.info('POLL - CurrentState:', armType);
 
-    const value = armType === ArmType.NIGHT_ARM ? 2 : 3;
-    this.service.updateCharacteristic(this.platform.Characteristic.SecuritySystemCurrentState, value);
+    const value =
+      armType === ArmType.FULL_ARM ? 1 : armType === ArmType.NIGHT_ARM ? 2 : 3;
+    this.service.updateCharacteristic(
+      this.platform.Characteristic.SecuritySystemCurrentState,
+      value,
+    );
     this.platform.log.info('POLL: Updated Characteristic');
   }
 
@@ -101,7 +132,10 @@ export class PanelAccessory {
     callback(null, this.state.targetArmType);
   }
 
-  async handleSetTargetState(value: CharacteristicValue, callback: CharacteristicSetCallback) {
+  async handleSetTargetState(
+    value: CharacteristicValue,
+    callback: CharacteristicSetCallback,
+  ) {
     this.platform.log.info('SET: TargetState');
     this.state.targetArmType = value;
     this.platform.log.info('TargetState:', value);
@@ -109,19 +143,19 @@ export class PanelAccessory {
     try {
       const panelId = this.accessory.context.panelId;
       switch (value) {
-        case 1:
+        case this.platform.Characteristic.SecuritySystemTargetState.AWAY_ARM:
           this.platform.log.info('ARMING...');
           await this.G4S.armPanel(panelId);
           callback();
           this.platform.log.info('ARMED!');
           break;
-        case 2:
+        case this.platform.Characteristic.SecuritySystemTargetState.NIGHT_ARM:
           this.platform.log.info('NIGHT ARMING...');
           await this.G4S.nightArmPanel(panelId);
           callback();
           this.platform.log.info('ARMED!');
           break;
-        case 3:
+        case this.platform.Characteristic.SecuritySystemTargetState.DISARM:
           this.platform.log.info('DISARMING...');
           await this.G4S.disarmPanel(panelId);
           callback();
@@ -130,12 +164,10 @@ export class PanelAccessory {
         default:
           throw new Error(`Unsupported value ${value}`);
       }
-
     } catch (e) {
       this.platform.log.info('Failed to arm/disarm');
-      this.platform.log.info(e.message);
-      callback(e);
+      this.platform.log.info((e as Error).message);
+      callback(e as Error);
     }
   }
-
 }
