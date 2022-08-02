@@ -1,5 +1,6 @@
 import {
-  API, APIEvent,
+  API,
+  APIEvent,
   Categories,
   Characteristic,
   DynamicPlatformPlugin,
@@ -15,7 +16,8 @@ import G4S from 'g4s';
 
 export class G4SPlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service = this.api.hap.Service;
-  public readonly Characteristic: typeof Characteristic = this.api.hap.Characteristic;
+  public readonly Characteristic: typeof Characteristic =
+    this.api.hap.Characteristic;
 
   public readonly accessories: PlatformAccessory[] = [];
   public readonly G4S: G4S;
@@ -56,8 +58,7 @@ export class G4SPlatform implements DynamicPlatformPlugin {
    * must not be registered again to prevent "duplicate UUID" errors.
    */
   async discoverDevices() {
-
-    const panelId = await this.G4S.getPanelId();
+    const panelId = (await this.G4S.getPanel()).PanelId;
 
     // generate a unique id for the accessory this should be generated from
     // something globally unique, but constant, for example, the device serial
@@ -66,11 +67,16 @@ export class G4SPlatform implements DynamicPlatformPlugin {
 
     // see if an accessory with the same uuid has already been registered and restored from
     // the cached devices we stored in the `configureAccessory` method above
-    const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
+    const existingAccessory = this.accessories.find(
+      (accessory) => accessory.UUID === uuid,
+    );
 
     if (existingAccessory) {
       // the accessory already exists
-      this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
+      this.log.info(
+        'Restoring existing accessory from cache:',
+        existingAccessory.displayName,
+      );
 
       // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. eg.:
       // existingAccessory.context.device = device;
@@ -79,14 +85,17 @@ export class G4SPlatform implements DynamicPlatformPlugin {
       // create the accessory handler for the restored accessory
       // this is imported from `platformAccessory.ts`
       new PanelAccessory(this, existingAccessory);
-
     } else {
       const displayName = `Panel: ${panelId}`;
       // the accessory does not yet exist, so we need to create it
       this.log.info('Adding new accessory:', displayName);
 
       // create a new accessory
-      const accessory = new this.api.platformAccessory(displayName, uuid, Categories.SECURITY_SYSTEM);
+      const accessory = new this.api.platformAccessory(
+        displayName,
+        uuid,
+        Categories.SECURITY_SYSTEM,
+      );
 
       // store a copy of the device object in the `accessory.context`
       // the `context` property can be used to store any data about the accessory you may need
@@ -97,7 +106,9 @@ export class G4SPlatform implements DynamicPlatformPlugin {
       new PanelAccessory(this, accessory);
 
       // link the accessory to your platform
-      this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+      this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [
+        accessory,
+      ]);
     }
   }
 }
