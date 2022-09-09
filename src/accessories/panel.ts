@@ -66,51 +66,48 @@ export class PanelAccessory {
       .getCharacteristic(
         this.platform.Characteristic.SecuritySystemCurrentState,
       )
-      .on('get', this.handleGetCurrentState.bind(this));
+      .onGet(this.handleGetCurrentState.bind(this));
 
     setInterval(this.pollCurrentState.bind(this), this.POLL_INTERVAL);
   }
 
-  async handleGetCurrentState(callback: CharacteristicGetCallback) {
+  private async handleGetCurrentState(): Promise<CharacteristicValue> {
     this.platform.log.info('GET: CurrentState');
     try {
+      const isAlarmTriggered = await this.G4S.isAlarmTriggered();
+      if (isAlarmTriggered) {
+        this.platform.log.info('Alarm is triggered');
+        return this.platform.Characteristic.SecuritySystemCurrentState
+          .ALARM_TRIGGERED;
+      }
+
       const armType = await this.G4S.getArmType();
       this.platform.log.info('CurrentState:', armType);
 
-      switch (armType) {
-        case ArmType.FULL_ARM:
-          callback(
-            null,
-            this.platform.Characteristic.SecuritySystemTargetState.AWAY_ARM,
-          );
-          break;
-        case ArmType.NIGHT_ARM:
-          callback(
-            null,
-            this.platform.Characteristic.SecuritySystemTargetState.NIGHT_ARM,
-          );
-          break;
-        case ArmType.DISARMED:
-          callback(
-            null,
-            this.platform.Characteristic.SecuritySystemTargetState.DISARM,
-          );
-          break;
-        default:
-          callback(
-            null,
-            this.platform.Characteristic.SecuritySystemTargetState.DISARM,
-          );
-      }
+      return this.armTypeToHomekit(armType);
     } catch (e) {
       this.platform.log.error(
         'Caught an error while trying to get currentstate',
       );
       this.platform.log.error((e as Error).message);
-      callback(e as Error);
+      return false;
     }
   }
 
+  private armTypeToHomekit(armType: ArmType): CharacteristicValue {
+    switch (armType) {
+      case ArmType.FULL_ARM:
+        return this.platform.Characteristic.SecuritySystemTargetState.AWAY_ARM;
+      case ArmType.NIGHT_ARM:
+        return this.platform.Characteristic.SecuritySystemTargetState.NIGHT_ARM;
+      case ArmType.DISARMED:
+        return this.platform.Characteristic.SecuritySystemTargetState.DISARM;
+      default:
+        throw new Error(`Unsupported ArmType: ${armType}`);
+    }
+  }
+
+  // TODO: Clean up the conversion and look into cancelling the request
   async pollCurrentState() {
     this.platform.log.info('POLL: CurrentState');
 
