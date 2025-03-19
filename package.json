@@ -1,7 +1,7 @@
 {
   "displayName": "G4S Alarm",
   "name": "homebridge-g4s-alarm",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Use G4S alarm in Homekit",
   "license": "Apache-2.0",
   "repository": {
