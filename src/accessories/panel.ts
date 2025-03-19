@@ -17,7 +17,10 @@ type State = {
 export class PanelAccessory {
   private service: Service;
   private G4S: G4S;
-  private readonly POLL_INTERVAL = 5000;
+  private readonly DEFAULT_POLL_INTERVAL = 10000;
+  private readonly FAST_POLL_INTERVAL = 3000;
+  private readonly MAX_WAIT_TIME = 10000;
+  private pollInterval: NodeJS.Timeout | null = null;
 
   private state: State = {
     targetArmType: 3,
@@ -38,18 +41,11 @@ export class PanelAccessory {
       this.accessory.getService(this.platform.Service.SecuritySystem) ??
       this.accessory.addService(this.platform.Service.SecuritySystem);
 
-    // To avoid "Cannot add a Service with the same UUID another Service without also defining a unique 'subtype' property." error,
-    // when creating multiple services of the same type, you need to use the following syntax to specify a name and subtype id:
-    // this.accessory.getService('NAME') ?? this.accessory.addService(this.platform.Service.Lightbulb, 'NAME', 'USER_DEFINED_SUBTYPE');
-
-    // set the service name, this is what is displayed as the default name on the Home app
-    // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
     this.service.setCharacteristic(
       this.platform.Characteristic.Name,
       this.platform.config.name ?? 'Alarmpanel',
     );
 
-    // register handlers for the TargetState Characteristic
     this.service
       .getCharacteristic(this.platform.Characteristic.SecuritySystemTargetState)
       .on('get', this.handleGetTargetState.bind(this))
@@ -63,34 +59,25 @@ export class PanelAccessory {
       });
 
     this.service
-      .getCharacteristic(
-        this.platform.Characteristic.SecuritySystemCurrentState,
-      )
+      .getCharacteristic(this.platform.Characteristic.SecuritySystemCurrentState)
       .onGet(this.handleGetCurrentState.bind(this));
 
-    setInterval(this.pollCurrentState.bind(this), this.POLL_INTERVAL);
+    this.startPolling(this.DEFAULT_POLL_INTERVAL);
   }
 
   private async handleGetCurrentState(): Promise<CharacteristicValue> {
-    this.platform.log.info('GET: CurrentState');
+    this.platform.log.info('GET: CurrentState, asking G4S API');
     try {
-      const isAlarmTriggered = await this.G4S.isAlarmTriggered();
-      if (isAlarmTriggered) {
-        this.platform.log.info('Alarm is triggered');
-        return this.platform.Characteristic.SecuritySystemCurrentState
-          .ALARM_TRIGGERED;
-      }
-
-      const armType = await this.G4S.getArmType();
-      this.platform.log.info('CurrentState:', armType);
-
+      const armType = await Promise.race([
+        this.G4S.getArmType(),
+        new Promise<ArmType>((_, reject) => setTimeout(() => reject(new Error('API timeout')), this.MAX_WAIT_TIME)),
+      ]);
+      this.platform.log.info('GET: CurrentState, arm type is:', this.armTypeToHomekit(armType));
       return this.armTypeToHomekit(armType);
     } catch (e) {
-      this.platform.log.error(
-        'Caught an error while trying to get currentstate',
-      );
-      this.platform.log.error((e as Error).message);
-      return false;
+      this.platform.log.error('Error fetching current state:', (e as Error).message);
+      this.platform.log.info('GET: CurrenState, failed to fetch so returning current state:', this.state.targetArmType);
+      return this.state.targetArmType;
     }
   }
 
@@ -107,20 +94,36 @@ export class PanelAccessory {
     }
   }
 
-  // TODO: Clean up the conversion and look into cancelling the request
-  async pollCurrentState() {
-    this.platform.log.info('POLL: CurrentState');
+  private startPolling(interval: number) {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+    }
+    this.pollInterval = setInterval(this.pollCurrentState.bind(this), interval);
+  }
 
-    const armType = await this.G4S.getArmType();
-    this.platform.log.info('POLL - CurrentState:', armType);
+  private async pollCurrentState() {
+    this.platform.log.info('POLL: Polling to sync possible changes from outside (manually arming/disarming alarm or via G4S App)');
+    try {
+      const isAlarmTriggered = await this.G4S.isAlarmTriggered();
+      if (isAlarmTriggered) {
+        this.service.updateCharacteristic(
+          this.platform.Characteristic.SecuritySystemCurrentState,
+          this.platform.Characteristic.SecuritySystemCurrentState.ALARM_TRIGGERED,
+        );
+        this.platform.log.info('POLL: Alarm is triggered, updating characteristic to reflect');
+        return;
+      }
 
-    const value =
-      armType === ArmType.FULL_ARM ? 1 : armType === ArmType.NIGHT_ARM ? 2 : 3;
-    this.service.updateCharacteristic(
-      this.platform.Characteristic.SecuritySystemCurrentState,
-      value,
-    );
-    this.platform.log.info('POLL: Updated Characteristic');
+      const armType = await this.G4S.getArmType();
+      const value = this.armTypeToHomekit(armType);
+      this.service.updateCharacteristic(
+        this.platform.Characteristic.SecuritySystemCurrentState,
+        value,
+      );
+      this.platform.log.info('POLL: Update characteristic to', value);
+    } catch (e) {
+      this.platform.log.error('Polling error:', (e as Error).message);
+    }
   }
 
   handleGetTargetState(callback: CharacteristicGetCallback) {
@@ -129,41 +132,40 @@ export class PanelAccessory {
     callback(null, this.state.targetArmType);
   }
 
-  async handleSetTargetState(
-    value: CharacteristicValue,
-    callback: CharacteristicSetCallback,
-  ) {
-    this.platform.log.info('SET: TargetState');
+  async handleSetTargetState(value: CharacteristicValue, callback: CharacteristicSetCallback) {
+    this.platform.log.info('SET: TargetState', value);
     this.state.targetArmType = value;
-    this.platform.log.info('TargetState:', value);
+    this.startPolling(this.FAST_POLL_INTERVAL);
 
     try {
       const panelId = this.accessory.context.panelId;
       switch (value) {
         case this.platform.Characteristic.SecuritySystemTargetState.AWAY_ARM:
-          this.platform.log.info('ARMING...');
           await this.G4S.armPanel(panelId);
-          callback();
-          this.platform.log.info('ARMED!');
           break;
         case this.platform.Characteristic.SecuritySystemTargetState.NIGHT_ARM:
-          this.platform.log.info('NIGHT ARMING...');
           await this.G4S.nightArmPanel(panelId);
-          callback();
-          this.platform.log.info('ARMED!');
           break;
         case this.platform.Characteristic.SecuritySystemTargetState.DISARM:
-          this.platform.log.info('DISARMING...');
           await this.G4S.disarmPanel(panelId);
-          callback();
-          this.platform.log.info('DISARMED!');
           break;
         default:
           throw new Error(`Unsupported value ${value}`);
       }
+
+      callback();
+
+      setTimeout(async () => {
+        const confirmedState = await this.handleGetCurrentState();
+        if (confirmedState === value) {
+          this.platform.log.info('SET: TargetState - State change confirmed!', confirmedState);
+        } else {
+          this.platform.log.warn('SET: TargetState - State change mismatch! Polling will continue.');
+        }
+        this.startPolling(this.DEFAULT_POLL_INTERVAL);
+      }, 15000);
     } catch (e) {
-      this.platform.log.info('Failed to arm/disarm');
-      this.platform.log.info((e as Error).message);
+      this.platform.log.error('Failed to arm/disarm:', (e as Error).message);
       callback(e as Error);
     }
   }
