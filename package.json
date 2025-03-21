@@ -30,7 +30,7 @@
     "security-system"
   ],
   "dependencies": {
-    "g4s": "0.4.0"
+    "g4s": "0.4.1"
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",
