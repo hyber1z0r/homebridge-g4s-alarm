@@ -21,6 +21,7 @@ export class PanelAccessory {
   private readonly FAST_POLL_INTERVAL = 3000;
   private readonly MAX_WAIT_TIME = 10000;
   private pollInterval: NodeJS.Timeout | null = null;
+  private lastUserActionTime = 0;
 
   private state: State = {
     targetArmType: 3,
@@ -72,11 +73,9 @@ export class PanelAccessory {
         this.G4S.getArmType(),
         new Promise<ArmType>((_, reject) => setTimeout(() => reject(new Error('API timeout')), this.MAX_WAIT_TIME)),
       ]);
-      this.platform.log.info('GET: CurrentState, arm type is:', this.armTypeToHomekit(armType));
       return this.armTypeToHomekit(armType);
     } catch (e) {
       this.platform.log.error('Error fetching current state:', (e as Error).message);
-      this.platform.log.info('GET: CurrenState, failed to fetch so returning current state:', this.state.targetArmType);
       return this.state.targetArmType;
     }
   }
@@ -102,7 +101,10 @@ export class PanelAccessory {
   }
 
   private async pollCurrentState() {
-    this.platform.log.info('POLL: Polling to sync possible changes from outside (manually arming/disarming alarm or via G4S App)');
+    if (Date.now() - this.lastUserActionTime < 15000) {
+      this.platform.log.info('Skipping polling update to avoid overriding a recent user action.');
+      return;
+    }
     try {
       const isAlarmTriggered = await this.G4S.isAlarmTriggered();
       if (isAlarmTriggered) {
@@ -110,33 +112,50 @@ export class PanelAccessory {
           this.platform.Characteristic.SecuritySystemCurrentState,
           this.platform.Characteristic.SecuritySystemCurrentState.ALARM_TRIGGERED,
         );
-        this.platform.log.info('POLL: Alarm is triggered, updating characteristic to reflect');
         return;
       }
-
       const armType = await this.G4S.getArmType();
       const value = this.armTypeToHomekit(armType);
       this.service.updateCharacteristic(
         this.platform.Characteristic.SecuritySystemCurrentState,
         value,
       );
-      this.platform.log.info('POLL: Update characteristic to', value);
+      if (Date.now() - this.lastUserActionTime > 15000) {
+        this.state.targetArmType = value;
+        this.service.updateCharacteristic(
+          this.platform.Characteristic.SecuritySystemTargetState,
+          value,
+        );
+      }
     } catch (e) {
       this.platform.log.error('Polling error:', (e as Error).message);
     }
   }
 
   handleGetTargetState(callback: CharacteristicGetCallback) {
-    this.platform.log.info('GET: TargetState');
-    this.platform.log.info('TargetState:', this.state.targetArmType);
-    callback(null, this.state.targetArmType);
+    this.platform.log.info('GET: TargetState requested');
+    if (Date.now() - this.lastUserActionTime < 15000) {
+      return callback(null, this.state.targetArmType);
+    }
+    this.handleGetCurrentState()
+      .then((currentState) => {
+        this.state.targetArmType = currentState;
+        callback(null, currentState);
+      })
+      .catch((error) => {
+        this.platform.log.error('Error fetching current state for TargetState:', error.message);
+        callback(null, this.state.targetArmType);
+      });
   }
 
   async handleSetTargetState(value: CharacteristicValue, callback: CharacteristicSetCallback) {
     this.platform.log.info('SET: TargetState', value);
     this.state.targetArmType = value;
-    this.startPolling(this.FAST_POLL_INTERVAL);
-
+    this.lastUserActionTime = Date.now();
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
     try {
       const panelId = this.accessory.context.panelId;
       switch (value) {
@@ -152,21 +171,14 @@ export class PanelAccessory {
         default:
           throw new Error(`Unsupported value ${value}`);
       }
-
       callback();
-
-      setTimeout(async () => {
-        const confirmedState = await this.handleGetCurrentState();
-        if (confirmedState === value) {
-          this.platform.log.info('SET: TargetState - State change confirmed!', confirmedState);
-        } else {
-          this.platform.log.warn('SET: TargetState - State change mismatch! Polling will continue.');
-        }
+      setTimeout(() => {
         this.startPolling(this.DEFAULT_POLL_INTERVAL);
       }, 15000);
     } catch (e) {
       this.platform.log.error('Failed to arm/disarm:', (e as Error).message);
       callback(e as Error);
+      this.startPolling(this.DEFAULT_POLL_INTERVAL);
     }
   }
 }
